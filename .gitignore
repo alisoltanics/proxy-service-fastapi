@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing / caching
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environment variables (keep .env.example tracked)
+.env
+
+# Benchmark output
+benchmark_results.json
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+.DS_Store
