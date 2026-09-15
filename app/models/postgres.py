@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Float, Integer, DateTime, JSON, Text, func
+from sqlalchemy import String, Float, Integer, DateTime, Text, func
 from app.config import get_settings
 from typing import Optional
 from datetime import datetime
@@ -29,8 +29,6 @@ class AuditLog(Base):
     response_time_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
-    request_body: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    response_body: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 

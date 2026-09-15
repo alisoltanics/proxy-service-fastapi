@@ -73,6 +73,7 @@ async def process_request(request: Request):
     }
     await update_request_log(request_id, update_data)
 
+    # Postgres فقط یک رکورد فشرده‌ی حسابرسی نگه می‌دارد؛ payload در Mongo می‌ماند.
     persist_audit_log.delay({
         "request_id": request_id,
         "trace_id": trace_id,
@@ -85,8 +86,6 @@ async def process_request(request: Request):
         "response_time_ms": result["latency_ms"],
         "error_message": result.get("error"),
         "retry_count": result.get("retry_count", 0),
-        "request_body": body,
-        "response_body": result["response"],
         "completed_at": datetime.utcnow().isoformat(),
     })
 
