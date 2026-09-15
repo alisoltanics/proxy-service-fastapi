@@ -1,6 +1,11 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from app.services.provider_manager import provider_manager
-from app.utils.rate_limiter import rate_limiter
+from app.utils.rate_limiter import (
+    process_rate_limit,
+    status_rate_limit,
+    history_rate_limit,
+    metrics_rate_limit,
+)
 from app.utils.observability import (
     generate_request_id,
     generate_trace_id,
@@ -11,20 +16,14 @@ from app.models.schemas import RequestLog, ProviderStatus
 from app.models.database import log_request, update_request_log, get_request_log, get_request_logs, get_metrics
 from app.tasks.worker import persist_audit_log
 from datetime import datetime
-import structlog
 
-logger = structlog.get_logger()
 router = APIRouter()
 
 
-@router.post("/process")
+@router.post("/process", dependencies=[Depends(process_rate_limit)])
 async def process_request(request: Request):
     request_id = getattr(request.state, "request_id", generate_request_id())
     trace_id = getattr(request.state, "trace_id", generate_trace_id())
-
-    if not await rate_limiter.check_global_rate_limit():
-        logger.warning("global_rate_limit_exceeded", request_id=request_id)
-        raise HTTPException(status_code=429, detail="Global rate limit exceeded")
 
     body = await request.json() if request.headers.get("content-type") == "application/json" else None
 
@@ -100,7 +99,7 @@ async def process_request(request: Request):
     }
 
 
-@router.get("/status/{request_id}")
+@router.get("/status/{request_id}", dependencies=[Depends(status_rate_limit)])
 async def get_status(request_id: str):
     log = await get_request_log(request_id)
     if not log:
@@ -108,7 +107,7 @@ async def get_status(request_id: str):
     return log
 
 
-@router.get("/history")
+@router.get("/history", dependencies=[Depends(history_rate_limit)])
 async def get_history(limit: int = 100, skip: int = 0):
     return await get_request_logs(limit=limit, skip=skip)
 
@@ -122,6 +121,6 @@ async def health_check():
     }
 
 
-@router.get("/metrics")
+@router.get("/metrics", dependencies=[Depends(metrics_rate_limit)])
 async def metrics():
     return await get_metrics()

@@ -1,7 +1,7 @@
 import redis.asyncio as redis
 import time
 from app.config import get_settings
-from fastapi import HTTPException
+from fastapi import HTTPException, Request, Depends
 import structlog
 
 logger = structlog.get_logger()
@@ -76,3 +76,27 @@ class RateLimiter:
 
 
 rate_limiter = RateLimiter()
+
+
+def rate_limit_dependency(key: str, limit: int, window: int = 1, detail: str = "Rate limit exceeded"):
+    """Factory returning a FastAPI dependency that enforces a rate limit."""
+
+    async def dependency(request: Request):
+        if not await rate_limiter.check_rate_limit(key, limit, window):
+            request_id = getattr(request.state, "request_id", "unknown")
+            logger.warning("rate_limit_exceeded", key=key, request_id=request_id)
+            raise HTTPException(status_code=429, detail=detail)
+
+    return dependency
+
+
+# Named rate-limit dependencies used by the API routers.
+process_rate_limit = rate_limit_dependency(
+    "global_rate_limit",
+    settings.RATE_LIMIT_PER_SECOND * 10,
+    window=10,
+    detail="Global rate limit exceeded",
+)
+status_rate_limit = rate_limit_dependency("status_endpoint", 20)
+history_rate_limit = rate_limit_dependency("history_endpoint", 10)
+metrics_rate_limit = rate_limit_dependency("metrics_endpoint", 5)
