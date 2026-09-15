@@ -10,6 +10,7 @@ services:
       - CELERY_BROKER_URL=amqp://rabbitmq:5672
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - RATE_LIMIT_PER_SECOND=100
+      - METRICS_API_KEY=proxy-metrics-secret
     depends_on:
       mongo:
         condition: service_healthy

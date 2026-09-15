@@ -6,6 +6,7 @@ from app.utils.rate_limiter import (
     history_rate_limit,
     metrics_rate_limit,
 )
+from app.utils.auth import require_metrics_api_key
 from app.utils.observability import (
     generate_request_id,
     generate_trace_id,
@@ -121,6 +122,9 @@ async def health_check():
     }
 
 
-@router.get("/metrics", dependencies=[Depends(metrics_rate_limit)])
+@router.get(
+    "/metrics",
+    dependencies=[Depends(metrics_rate_limit), Depends(require_metrics_api_key)],
+)
 async def metrics():
     return await get_metrics()

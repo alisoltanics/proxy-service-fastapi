@@ -55,3 +55,39 @@ async def test_process_request_returns_response():
     assert data["status"] == "success"
     assert data["provider"] == "provider_a"
     assert data["latency_ms"] == 150.0
+
+
+@pytest.mark.asyncio
+async def test_metrics_requires_api_key():
+    from app.main import app
+    from httpx import AsyncClient, ASGITransport
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("app.models.database.connect_db", new_callable=AsyncMock):
+            with patch("app.models.postgres.connect_postgres", new_callable=AsyncMock):
+                with patch("app.services.provider_manager.provider_manager.initialize", new_callable=AsyncMock):
+                    with patch("app.utils.rate_limiter.rate_limiter.connect", new_callable=AsyncMock):
+                        response = await client.get("/v1/metrics")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_metrics_with_api_key():
+    from app.main import app
+    from httpx import AsyncClient, ASGITransport
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("app.models.database.connect_db", new_callable=AsyncMock):
+            with patch("app.models.postgres.connect_postgres", new_callable=AsyncMock):
+                with patch("app.services.provider_manager.provider_manager.initialize", new_callable=AsyncMock):
+                    with patch("app.utils.rate_limiter.rate_limiter.connect", new_callable=AsyncMock):
+                        with patch("app.routers.api.get_metrics", new_callable=AsyncMock) as mock_metrics:
+                            mock_metrics.return_value = {"total_requests": 0}
+                            response = await client.get(
+                                "/v1/metrics",
+                                headers={"X-API-Key": "proxy-metrics-secret"},
+                            )
+    assert response.status_code == 200
+    assert response.json()["total_requests"] == 0

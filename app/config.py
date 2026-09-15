@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_SECOND: int = 100
     RATE_LIMIT_BURST: int = 200
 
+    METRICS_API_KEY: str = "proxy-metrics-secret"
+
     PROVIDER_A_URL: str = "http://92.114.51.251:8001/v1/process"
     PROVIDER_B_URL: str = "http://92.114.51.251:8002/v1/process"
     PROVIDER_C_URL: str = "http://92.114.51.251:8003/v1/process"
