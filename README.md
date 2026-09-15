@@ -22,13 +22,12 @@ graph TB
     ProviderMgr -->|"fallback"| PC["Provider C<br/>Variable latency, timeouts<br/>Port 8003"]
     
     subgraph "Data Layer"
-        MongoDB[("MongoDB<br/>Request Logs<br/>(operational)")]
-        PostgreSQL[("PostgreSQL<br/>Audit Logs<br/>(compliance)")]
+        MongoDB[("MongoDB<br/>Request Logs<br/>(full operational log)")]
+        PostgreSQL[("PostgreSQL<br/>Audit Logs<br/>(compact, no payloads)")]
         Redis[("Redis<br/>Rate Limit Counters<br/>(ephemeral)")]
     end
     
     Router -->|"log request"| MongoDB
-    Router -->|"audit trail"| PostgreSQL
     RateLimiter -->|"sliding window"| Redis
     
     subgraph "Async Processing"
@@ -40,7 +39,8 @@ graph TB
     Router -->|"queue task"| RabbitMQ
     RabbitMQ --> CeleryWorker
     CeleryBeat -->|"schedule"| RabbitMQ
-    CeleryWorker -->|"write"| MongoDB
+    CeleryWorker -->|"audit trail (async)"| PostgreSQL
+    CeleryBeat -->|"daily cleanup (30d)"| MongoDB
     
     subgraph "Observability"
         Prometheus["Prometheus<br/>(metrics scraping)"]
@@ -63,6 +63,7 @@ sequenceDiagram
     participant M as MongoDB
     participant PG as PostgreSQL
     participant Q as RabbitMQ
+    participant W as Celery Worker
 
     C->>A: POST /v1/process
     A->>A: Generate request_id + trace_id
@@ -78,10 +79,10 @@ sequenceDiagram
     E-->>P: Response (200/429/5xx/timeout)
     P-->>A: Result + latency + provider info
     A->>M: Update request log
-    A->>PG: Write audit record
-    A->>R: Record metrics
-    A->>Q: Queue async task
+    A->>Q: Queue audit task
     A-->>C: JSON response with trace data
+    Q-->>W: Deliver audit task
+    W->>PG: Write compact audit record (async)
 ```
 
 ## Setup & Running
@@ -115,7 +116,7 @@ docker compose ps
 | Grafana | `http://localhost:3000` (admin/admin) | Visualization |
 | RabbitMQ | `http://localhost:15672` (guest/guest) | Message queue management |
 | MongoDB | `mongodb://localhost:27017` | Request logs |
-| PostgreSQL | `postgresql://localhost:5432` | Audit logs |
+| PostgreSQL | `postgresql://localhost:5432` | Compact audit logs |
 
 ### API Usage
 
@@ -178,8 +179,8 @@ Results are saved to `benchmark_results.json` with full latency percentiles and 
 | Technology | Purpose | Why Chosen |
 |------------|---------|------------|
 | **FastAPI** | API framework | Async support, auto-docs, high performance |
-| **MongoDB** | Operational logs | Schema flexibility, write performance, aggregation pipeline |
-| **PostgreSQL** | Audit logs | ACID compliance, relational integrity, query power |
+| **MongoDB** | Full operational logs | Schema flexibility, write performance, aggregation pipeline |
+| **PostgreSQL** | Compact audit trail (no payloads) | ACID compliance, relational integrity, query power |
 | **Redis** | Rate limiting | Atomic operations, sliding window support, low latency |
 | **Celery + RabbitMQ** | Async tasks | Reliable queue, retry handling, beat scheduling |
 | **Prometheus + Grafana** | Observability | Industry standard, rich dashboards |
@@ -189,7 +190,7 @@ Results are saved to `benchmark_results.json` with full latency percentiles and 
 1. **Provider Manager**: Routes requests to the lowest-latency available provider using circuit breakers
 2. **Rate Limiter**: Redis-based sliding window algorithm for global and per-provider rate limiting
 3. **Observability Middleware**: Attaches request_id/trace_id to every request, tracks Prometheus metrics
-4. **Dual Persistence**: MongoDB for operational query patterns, PostgreSQL for audit/compliance
+4. **Dual Persistence**: MongoDB keeps the full operational log (headers/body/response) for debugging, history and metrics; PostgreSQL keeps only a compact, immutable audit record (no payloads), written asynchronously via Celery
 
 ## Trade-offs & Known Bottlenecks
 
@@ -197,7 +198,7 @@ Results are saved to `benchmark_results.json` with full latency percentiles and 
 
 | Decision | Rationale | Trade-off |
 |----------|-----------|-----------|
-| **MongoDB + PostgreSQL** | MongoDB for fast operational writes/reads; PostgreSQL for compliance audit trail | Higher infrastructure cost; data duplication |
+| **MongoDB + PostgreSQL** | MongoDB stores the full operational log; PostgreSQL stores a compact audit trail written asynchronously | Higher infrastructure cost; two data stores to operate |
 | **In-memory circuit breaker** | Simple, no external dependency for circuit state | State lost on restart; not shared across instances |
 | **Synchronous provider calls** | Simpler code, easier debugging | Higher latency per request vs. parallel provider probing |
 | **Single Celery worker pool** | Shared across all task types | Slow tasks can block fast ones |
