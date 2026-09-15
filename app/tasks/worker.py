@@ -19,23 +19,24 @@ def persist_audit_log(self, audit_data: dict):
         raise self.retry(exc=e, countdown=5)
 
 
+async def _cleanup_old_logs(days_old: int):
+    settings = get_settings()
+    cutoff = datetime.utcnow() - timedelta(days=days_old)
+
+    client = AsyncIOMotorClient(settings.MONGO_URI)
+    try:
+        db = client[settings.MONGO_DB]
+        result = await db.request_logs.delete_many({"timestamp": {"$lt": cutoff}})
+    finally:
+        client.close()
+
+    logger.info("logs_cleaned", deleted_count=result.deleted_count)
+
+
 @celery_app.task
 def cleanup_old_logs(days_old: int = 30):
     try:
-        settings = get_settings()
-        client = AsyncIOMotorClient(settings.MONGO_URI)
-        db = client[settings.MONGO_DB]
-
-        cutoff = datetime.utcnow() - timedelta(days=days_old)
-
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(
-            db.request_logs.delete_many({"timestamp": {"$lt": cutoff}})
-        )
-        loop.close()
-        client.close()
-
-        logger.info("logs_cleaned", deleted_count=result.deleted_count)
+        asyncio.run(_cleanup_old_logs(days_old))
     except Exception as e:
         logger.error("cleanup_failed", error=str(e))
 
