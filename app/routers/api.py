@@ -10,7 +10,6 @@ from app.utils.observability import (
 from app.models.schemas import RequestLog, ProviderStatus
 from app.models.database import log_request, update_request_log, get_request_log, get_request_logs, get_metrics
 from app.models.postgres import audit_log_request
-from app.tasks.worker import process_request_async
 from datetime import datetime
 import structlog
 
@@ -90,11 +89,6 @@ async def process_request(request: Request):
         response_body=result["response"],
         completed_at=datetime.utcnow(),
     )
-
-    try:
-        process_request_async.delay(update_data)
-    except Exception:
-        pass
 
     return {
         "request_id": request_id,

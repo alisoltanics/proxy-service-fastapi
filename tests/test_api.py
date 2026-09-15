@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from datetime import datetime
 from app.models.schemas import ProviderStatus
 
@@ -44,12 +44,10 @@ async def test_process_request_returns_response():
                             with patch("app.routers.api.log_request", new_callable=AsyncMock):
                                 with patch("app.routers.api.update_request_log", new_callable=AsyncMock):
                                     with patch("app.routers.api.audit_log_request", new_callable=AsyncMock):
-                                        with patch("app.routers.api.process_request_async") as mock_task:
-                                            mock_task.delay = MagicMock()
-                                            response = await client.post(
-                                                "/v1/process",
-                                                json={"action": "test"},
-                                            )
+                                        response = await client.post(
+                                            "/v1/process",
+                                            json={"action": "test"},
+                                        )
 
     assert response.status_code == 200
     data = response.json()
