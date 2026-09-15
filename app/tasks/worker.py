@@ -1,5 +1,6 @@
 from app.tasks.celery_app import celery_app
 from motor.motor_asyncio import AsyncIOMotorClient
+from app.models.postgres import insert_audit_log
 from app.config import get_settings
 from datetime import datetime, timedelta
 import asyncio
@@ -8,28 +9,13 @@ import structlog
 logger = structlog.get_logger()
 
 
-def get_sync_mongo_client():
-    settings = get_settings()
-    return AsyncIOMotorClient(settings.MONGO_URI)
-
-
 @celery_app.task(bind=True, max_retries=3)
-def process_request_async(self, request_data: dict):
+def persist_audit_log(self, audit_data: dict):
     try:
-        settings = get_settings()
-        client = AsyncIOMotorClient(settings.MONGO_URI)
-        db = client[settings.MONGO_DB]
-
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(
-            db.request_logs.insert_one(request_data)
-        )
-        loop.close()
-        client.close()
-
-        logger.info("async_request_logged", request_id=request_data.get("request_id"))
+        asyncio.run(insert_audit_log(audit_data))
+        logger.info("audit_log_persisted", request_id=audit_data.get("request_id"))
     except Exception as e:
-        logger.error("async_task_failed", error=str(e))
+        logger.error("audit_log_failed", error=str(e))
         raise self.retry(exc=e, countdown=5)
 
 

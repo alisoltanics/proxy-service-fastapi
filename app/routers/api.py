@@ -9,7 +9,7 @@ from app.utils.observability import (
 )
 from app.models.schemas import RequestLog, ProviderStatus
 from app.models.database import log_request, update_request_log, get_request_log, get_request_logs, get_metrics
-from app.models.postgres import audit_log_request
+from app.tasks.worker import persist_audit_log
 from datetime import datetime
 import structlog
 
@@ -73,22 +73,22 @@ async def process_request(request: Request):
     }
     await update_request_log(request_id, update_data)
 
-    await audit_log_request(
-        request_id=request_id,
-        trace_id=trace_id,
-        method=request.method,
-        path=str(request.url.path),
-        client_ip=request.client.host if request.client else None,
-        provider_used=result.get("provider"),
-        status=status_value,
-        response_status_code=result["status_code"],
-        response_time_ms=result["latency_ms"],
-        error_message=result.get("error"),
-        retry_count=result.get("retry_count", 0),
-        request_body=body,
-        response_body=result["response"],
-        completed_at=datetime.utcnow(),
-    )
+    persist_audit_log.delay({
+        "request_id": request_id,
+        "trace_id": trace_id,
+        "method": request.method,
+        "path": str(request.url.path),
+        "client_ip": request.client.host if request.client else None,
+        "provider_used": result.get("provider"),
+        "status": status_value,
+        "response_status_code": result["status_code"],
+        "response_time_ms": result["latency_ms"],
+        "error_message": result.get("error"),
+        "retry_count": result.get("retry_count", 0),
+        "request_body": body,
+        "response_body": result["response"],
+        "completed_at": datetime.utcnow().isoformat(),
+    })
 
     return {
         "request_id": request_id,

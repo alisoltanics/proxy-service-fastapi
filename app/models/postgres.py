@@ -68,41 +68,28 @@ async def get_session() -> AsyncSession:
     return pg.session_factory()
 
 
-async def audit_log_request(
-    request_id: str,
-    trace_id: str,
-    method: str,
-    path: str,
-    client_ip: Optional[str],
-    provider_used: Optional[str],
-    status: str,
-    response_status_code: Optional[int],
-    response_time_ms: Optional[float],
-    error_message: Optional[str],
-    retry_count: int,
-    request_body: Optional[dict],
-    response_body: Optional[dict],
-    completed_at: Optional[datetime],
-):
-    try:
+async def insert_audit_log(audit_data: dict):
+    """Insert a single audit row.
+
+    Uses the pooled session when running inside the app; in Celery workers
+    (where the app lifespan never ran) it creates a standalone engine.
+    """
+    audit_data = dict(audit_data)
+    completed_at = audit_data.get("completed_at")
+    if isinstance(completed_at, str):
+        audit_data["completed_at"] = datetime.fromisoformat(completed_at)
+
+    if pg.session_factory is not None:
         async with pg.session_factory() as session:
-            log = AuditLog(
-                request_id=request_id,
-                trace_id=trace_id,
-                method=method,
-                path=path,
-                client_ip=client_ip,
-                provider_used=provider_used,
-                status=status,
-                response_status_code=response_status_code,
-                response_time_ms=response_time_ms,
-                error_message=error_message,
-                retry_count=retry_count,
-                request_body=request_body,
-                response_body=response_body,
-                completed_at=completed_at,
-            )
-            session.add(log)
+            session.add(AuditLog(**audit_data))
             await session.commit()
-    except Exception as e:
-        logger.error("audit_log_failed", error=str(e))
+        return
+
+    engine = create_async_engine(settings.POSTGRES_URL)
+    try:
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_factory() as session:
+            session.add(AuditLog(**audit_data))
+            await session.commit()
+    finally:
+        await engine.dispose()
